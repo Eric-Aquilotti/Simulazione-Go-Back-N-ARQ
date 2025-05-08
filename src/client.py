@@ -27,10 +27,11 @@ nPackets: int = read_int(
 )
 
 timeout: float = 2
-data = ["pkt" + str(i) for i in range(nPackets)]
+
+data: list = ["pkt" + str(i) for i in range(nPackets)]
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-server_address = ('localhost', 8080)
+server_address: tuple = ('localhost', 8080)
 
 sock.setblocking(False)
 
@@ -38,6 +39,10 @@ def send_message(i):
     message = f"{i}:{data[i]}"
     sock.sendto(message.encode(), server_address)
     print(f"Sent {message}")
+
+def send_window(base, current):
+    for seq in range(base, current):
+        send_message(seq)
 
 base: int = 0
 current: int = 0
@@ -48,18 +53,17 @@ while base < len(data):
     while current < min(len(data), base + window_size):
         send_message(current)
         if current == base:
-            timer_start = time.time()
+            timer_start: float = time.time()
         current += 1
     
-    remaining_time = timeout - (time.time() - timer_start) if timer_start else timeout
+    remaining_time: float = timeout - (time.time() - timer_start) if timer_start else timeout
     if remaining_time <= 0:
         print("Timeout --> retransmitting window")
         retrasmissions += 1
 
         # Retransmit all un-acked packets
-        for seq in range(base, current):
-            lost_packets += 1
-            send_message(seq)
+        send_window(base=base, current=current)
+
         # Restart timer
         timer_start = time.time()
         continue
@@ -77,4 +81,8 @@ while base < len(data):
         else:
             print(f"Ignoring out-of-order ack {ack}, expected {base}")
 
-print(f"{nPackets} packets were sent succesfully\nLost packages: {lost_packets}\nRetrasmissions: {retrasmissions}")
+# Tell the server the communication is over and get number of lost packets
+sock.sendto(b"EOF", server_address)
+ready, _, _ = select.select([sock], [], [])
+lost_packets = int(sock.recvfrom(1024)[0].decode())
+print(f"{nPackets} packets were sent succesfully\nLost packets: {lost_packets}\nRetrasmissions: {retrasmissions}")
